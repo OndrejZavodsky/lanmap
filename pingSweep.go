@@ -1,8 +1,10 @@
 package lanmap
 
 import (
+	"net"
 	"net/netip"
 	"sync"
+	"time"
 )
 
 func GenerateAddresses(prefix netip.Prefix) []netip.Addr {
@@ -29,8 +31,19 @@ func pingWorker(
 	defer wg.Done()
 
 	for ip := range jobs {
-		//ping the device
-		// 2. Send PingResult{Device: ..., Err: ...} to 'results' channel
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip.String(), "80"), 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			results <- PingRes{
+				Device: Device{IP: ip},
+				Err:    nil,
+			}
+		} else {
+			results <- PingRes{
+				Device: Device{},
+				Err:    err,
+			}
+		}
 	}
 }
 
