@@ -1,8 +1,9 @@
-package lanmap
+package main
 
 import (
 	"net"
 	"net/netip"
+	"os"
 	"sync"
 	"time"
 )
@@ -32,6 +33,12 @@ func pingWorker(
 
 	for ip := range jobs {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip.String(), "80"), 500*time.Millisecond)
+		if !os.IsTimeout(err) {
+			results <- PingRes{
+				Device: Device{IP: ip},
+				Err:    nil,
+			}
+		}
 		if err == nil {
 			conn.Close()
 			results <- PingRes{

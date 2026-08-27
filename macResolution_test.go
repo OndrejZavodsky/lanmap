@@ -1,4 +1,4 @@
-package lanmap
+package main
 
 import (
 	"net/netip"
