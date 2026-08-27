@@ -11,9 +11,6 @@ import (
 )
 
 func GetARPTable() (io.Reader, error) {
-	// Note: While 'arp -a' works on Windows/macOS, modern Linux and NixOS environments
-	// often omit 'net-tools' by default in favor of 'iproute2' (e.g., 'ip neighbor').
-	// 'arp -a' is fine for this milestone, but keep that in mind for broad Linux support.
 	output, err := exec.Command("arp", "-a").Output()
 	if err != nil {
 		return nil, err
@@ -21,33 +18,31 @@ func GetARPTable() (io.Reader, error) {
 
 	return bytes.NewReader(output), nil
 }
-func ParseARP() (map[netip.Addr]net.HardwareAddr, error) {
-	arpBytes, err := exec.Command("arp", "-a").Output()
-	if err != nil {
-		return nil, err
-	}
+
+func ParseARP(r io.Reader) (map[netip.Addr]net.HardwareAddr, error) {
 	macMap := make(map[netip.Addr]net.HardwareAddr)
-	scanner := bufio.NewScanner(bytes.NewReader(arpBytes))
+	scanner := bufio.NewScanner(r)
+
 	for scanner.Scan() {
-		line := scanner.Text()
-		tokens := strings.Fields(line)
+		tokens := strings.Fields(scanner.Text())
 		var foundIp netip.Addr
 		var foundMac net.HardwareAddr
+
 		for _, t := range tokens {
-			ip, err := netip.ParseAddr(t)
-			if err != nil {
-				mac, err := net.ParseMAC(t)
-				if err != nil {
-					continue
-				}
+			if ip, err := netip.ParseAddr(t); err == nil {
+				foundIp = ip
+				continue
+			}
+
+			if mac, err := net.ParseMAC(t); err == nil {
 				foundMac = mac
 			}
-			foundIp = ip
 		}
+
 		if foundIp.IsValid() && foundMac != nil {
 			macMap[foundIp] = foundMac
-
 		}
 	}
-	return macMap, nil
+
+	return macMap, scanner.Err()
 }
