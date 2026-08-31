@@ -6,7 +6,9 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -25,12 +27,12 @@ func ParseARP(r io.Reader) (map[netip.Addr]net.HardwareAddr, error) {
 
 	for scanner.Scan() {
 		tokens := strings.Fields(scanner.Text())
-		var foundIp netip.Addr
+		var foundIP netip.Addr
 		var foundMac net.HardwareAddr
 
 		for _, t := range tokens {
 			if ip, err := netip.ParseAddr(t); err == nil {
-				foundIp = ip
+				foundIP = ip
 				continue
 			}
 
@@ -39,10 +41,22 @@ func ParseARP(r io.Reader) (map[netip.Addr]net.HardwareAddr, error) {
 			}
 		}
 
-		if foundIp.IsValid() && foundMac != nil {
-			macMap[foundIp] = foundMac
+		if foundIP.IsValid() && foundMac != nil {
+			macMap[foundIP] = foundMac
 		}
 	}
 
 	return macMap, scanner.Err()
+}
+
+func ensureInstalledDB() bool {
+	cashDir, err := os.UserCacheDir()
+	if err != nil {
+		return false
+	}
+	path := filepath.Join(cashDir, "lanmap/oui.txt")
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	return false
 }
