@@ -1,7 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -58,5 +64,58 @@ func TestParseARP(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type urlRewriteTransport struct {
+	BaseTransport http.RoundTripper
+	TestServerURL string
+}
+
+func (u *urlRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	parsedTestURL, err := url.Parse(u.TestServerURL)
+	if err != nil {
+		return nil, err
+	}
+
+	modifiedReq := req.Clone(req.Context())
+	modifiedReq.URL.Scheme = parsedTestURL.Scheme
+	modifiedReq.URL.Host = parsedTestURL.Host
+
+	return u.BaseTransport.RoundTrip(modifiedReq)
+}
+
+func TestDownloadOUIDB(t *testing.T) {
+	isolatedCacheDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", isolatedCacheDir)
+	t.Setenv("HOME", isolatedCacheDir)
+
+	mockOUIData := []byte("00-00-00   (hex)\t\tXEROX CORPORATION")
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockOUIData)
+	}))
+	defer mockServer.Close()
+
+	interceptClient := mockServer.Client()
+	interceptClient.Transport = &urlRewriteTransport{
+		BaseTransport: interceptClient.Transport,
+		TestServerURL: mockServer.URL,
+	}
+
+	err := downloadOUIDB(interceptClient)
+	if err != nil {
+		t.Fatalf("DownloadOUIDB failed unexpectedly: %v", err)
+	}
+
+	expectedDestination := filepath.Join(isolatedCacheDir, "lanmap", "oui.txt")
+
+	savedData, err := os.ReadFile(expectedDestination)
+	if err != nil {
+		t.Fatalf("Failed to read the generated OUI file: %v", err)
+	}
+
+	if !bytes.Equal(savedData, mockOUIData) {
+		t.Errorf("File contents did not match. Got %q, wanted %q", savedData, mockOUIData)
 	}
 }
